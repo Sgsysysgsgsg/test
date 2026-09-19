@@ -1,0 +1,3 @@
+Geyser Mobile 1.2.2: adds org.tukaani:xz runtime dependency required by Apache Commons Compress for .tar.xz extraction.
+
+Runtime execution fix: explicitly chmods Java 21 bin executables to 0755 and verifies canExecute() before launching.
