@@ -2,7 +2,7 @@
 <uses-permission android:name="android.permission.INTERNET"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
-<application android:theme="@style/AppTheme" android:label="Geyser Mobile" android:allowBackup="false" android:extractNativeLibs="true" android:allowNativeHeapPointerTagging="false">
+<application android:theme="@style/AppTheme" android:label="RORO" android:icon="@drawable/ic_butterfly" android:roundIcon="@drawable/ic_butterfly" android:allowBackup="false" android:extractNativeLibs="true" android:allowNativeHeapPointerTagging="false">
 <activity android:name=".MainActivity" android:exported="true">
 <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
 </activity>

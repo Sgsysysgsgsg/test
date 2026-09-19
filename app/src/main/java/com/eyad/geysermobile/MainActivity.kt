@@ -27,17 +27,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var start: Button
     private lateinit var stop: Button
     private lateinit var authGroup: RadioGroup
+    private lateinit var keyButton: Button
     private lateinit var keyStatus: TextView
 
+    // Clean dark UI with a subtle purple/pink accent.
     private val bg = Color.rgb(10, 12, 16)
-    private val card = Color.rgb(20, 23, 29)
-    private val field = Color.rgb(15, 18, 23)
-    private val border = Color.rgb(48, 54, 65)
+    private val card = Color.rgb(20, 24, 32)
+    private val field = Color.rgb(15, 19, 25)
+    private val border = Color.rgb(43, 49, 60)
     private val text = Color.rgb(244, 246, 250)
-    private val muted = Color.rgb(157, 166, 180)
-    private val accent = Color.rgb(78, 157, 242)
-    private val success = Color.rgb(67, 205, 137)
-    private val danger = Color.rgb(255, 91, 104)
+    private val muted = Color.rgb(157, 165, 178)
+    private val accent = Color.rgb(160, 92, 245)
+    private val accentDark = Color.rgb(116, 68, 181)
+    private val success = Color.rgb(70, 218, 155)
+    private val danger = Color.rgb(255, 91, 120)
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -99,9 +102,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun cardView(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(card, 18, border)
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        layoutParams = LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(14) }
+        background = rounded(card, 19, border)
+        setPadding(dp(17), dp(17), dp(17), dp(17))
+        layoutParams = LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(13) }
     }
 
     private fun input(title: String, value: String, number: Boolean = false): EditText = EditText(this).apply {
@@ -112,7 +115,7 @@ class MainActivity : AppCompatActivity() {
         hint = title
         setSingleLine(true)
         inputType = if (number) InputType.TYPE_CLASS_NUMBER else InputType.TYPE_CLASS_TEXT
-        background = rounded(field, 12, border)
+        background = rounded(field, 13, border)
         setPadding(dp(14), 0, dp(14), 0)
         minHeight = dp(52)
         layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(10) }
@@ -120,15 +123,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun actionButton(label: String, color: Int, enabled: Boolean = true): Button = Button(this).apply {
         text = label
-        textSize = 13f
+        textSize = 13.5f
         setTextColor(Color.WHITE)
         isAllCaps = false
         stateListAnimator = null
         background = rounded(color, 14)
         isEnabled = enabled
+        alpha = if (enabled) 1f else 0.48f
         minHeight = dp(50)
         minimumHeight = dp(50)
         setPadding(dp(10), 0, dp(10), 0)
+        setOnEnabledChangeListenerCompat()
+    }
+
+    private fun Button.setOnEnabledChangeListenerCompat() {
+        // Keep the disabled state visually quiet without adding animations or extra work.
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> alpha = if (isEnabled) 1f else 0.48f }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -144,13 +154,14 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this).apply { clipToPadding = false; isFillViewport = true }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(30))
+            setPadding(dp(18), dp(18), dp(18), dp(28))
         }
 
+        // Header
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(2), 0, dp(18))
+            setPadding(0, dp(2), 0, dp(16))
         }
         val icon = TextView(this).apply {
             text = "G"
@@ -158,30 +169,42 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
-            background = rounded(accent, 14)
-            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) }
+            background = rounded(accent, 15)
+            layoutParams = LinearLayout.LayoutParams(dp(50), dp(50)).apply { rightMargin = dp(12) }
         }
         val headerText = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(textView("Geyser Mobile", 25f, text, true))
             addView(textView("Bedrock → Java bridge", 12.5f, muted).apply { setPadding(0, dp(4), 0, 0) })
+            addView(textView("Made for RORO ONLY", 10.5f, accent, true).apply { setPadding(0, dp(5), 0, 0) })
         }
         header.addView(icon)
         header.addView(headerText, LinearLayout.LayoutParams(0, -2, 1f))
         content.addView(header)
 
+        // Friendly intro: no programming knowledge required.
+        val intro = TextView(this).apply {
+            text = "Simple setup. Enter the Java server and tap Start."
+            textSize = 12.5f
+            setTextColor(muted)
+            setPadding(dp(2), 0, dp(2), dp(15))
+        }
+        content.addView(intro)
+
+        // Status
         val statusCard = cardView()
         val statusBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        statusDot = textView("●", 16f, muted)
-        statusDot.layoutParams = LinearLayout.LayoutParams(dp(26), -2)
+        statusDot = textView("●", 15f, muted)
+        statusDot.layoutParams = LinearLayout.LayoutParams(dp(25), -2)
         status = textView("Stopped", 15f, text, true)
         statusBox.addView(statusDot)
         statusBox.addView(status)
         statusCard.addView(statusBox)
         content.addView(statusCard)
 
+        // Java server
         val serverCard = cardView()
-        serverCard.addView(section("Java Server", "Where Geyser will forward Bedrock players"))
+        serverCard.addView(section("Java Server", "Where Bedrock players will connect through Geyser"))
         serverCard.addView(Space(this).apply { minimumHeight = dp(12) })
         val ip = input("Java Server IP / Host", "127.0.0.1")
         val port = input("Java Port", "25565", true)
@@ -189,22 +212,27 @@ class MainActivity : AppCompatActivity() {
         serverCard.addView(port)
         content.addView(serverCard)
 
+        // Authentication
         val authCard = cardView()
-        authCard.addView(section("Authentication", "Choose how Bedrock players authenticate"))
+        authCard.addView(section("Login", "Pick the login method used by your Java server"))
         authGroup = RadioGroup(this).apply {
             orientation = RadioGroup.VERTICAL
-            setPadding(0, dp(8), 0, dp(4))
+            setPadding(0, dp(8), 0, dp(2))
         }
-        val online = radio("Online", "Microsoft authentication", 1)
+        val online = radio("Online", "Microsoft account", 1)
         val offline = radio("Offline", "No account authentication", 2)
-        val floodgate = radio("Floodgate", "Use your Floodgate key", 3)
-        authGroup.addView(online); authGroup.addView(offline); authGroup.addView(floodgate)
+        val floodgate = radio("Floodgate", "Floodgate key", 3)
+        authGroup.addView(online)
+        authGroup.addView(offline)
+        authGroup.addView(floodgate)
         online.isChecked = true
         authCard.addView(authGroup)
 
-        val keyButton = actionButton("Select Floodgate key", Color.rgb(39, 44, 52))
-        keyStatus = textView("No Floodgate key selected", 12.5f, muted)
+        keyButton = actionButton("Select Floodgate key (.pem)", Color.rgb(47, 38, 61))
+        keyStatus = textView("Floodgate key not needed", 12f, muted)
         keyStatus.setPadding(dp(2), dp(7), 0, 0)
+        keyButton.visibility = View.GONE
+        keyStatus.visibility = View.GONE
         keyButton.setOnClickListener {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 type = "*/*"
@@ -213,40 +241,52 @@ class MainActivity : AppCompatActivity() {
         }
         authCard.addView(keyButton, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(4) })
         authCard.addView(keyStatus)
+        authGroup.setOnCheckedChangeListener { _, checkedId ->
+            val flood = checkedId == 3
+            keyButton.visibility = if (flood) View.VISIBLE else View.GONE
+            keyStatus.visibility = if (flood) View.VISIBLE else View.GONE
+            if (flood && java.io.File(filesDir, "floodgate-key.pem").exists()) {
+                keyStatus.text = "✓ Floodgate key ready"
+            }
+        }
         content.addView(authCard)
 
+        // Bedrock port is intentionally hidden. It is fixed to 19132.
         val bedrockPort = 19132
+
+        // Main actions
         val actionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         start = actionButton("Start Geyser", accent)
-        stop = actionButton("Stop", Color.rgb(55, 61, 72), false)
-        actionRow.addView(start, LinearLayout.LayoutParams(0, dp(52), 1f).apply { rightMargin = dp(5) })
-        actionRow.addView(stop, LinearLayout.LayoutParams(0, dp(52), 1f).apply { leftMargin = dp(5) })
-        content.addView(actionRow, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(12) })
+        stop = actionButton("Stop", Color.rgb(49, 54, 63), false)
+        actionRow.addView(start, LinearLayout.LayoutParams(0, dp(53), 1f).apply { rightMargin = dp(5) })
+        actionRow.addView(stop, LinearLayout.LayoutParams(0, dp(53), 1f).apply { leftMargin = dp(5) })
+        content.addView(actionRow, LinearLayout.LayoutParams(-1, dp(53)).apply { bottomMargin = dp(12) })
 
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 1000
             progressTintList = ColorStateList.valueOf(accent)
-            progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(39, 44, 52))
+            progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(43, 49, 60))
             visibility = View.GONE
         }
-        progressText = textView("Ready", 12.5f, muted)
-        progressText.setPadding(2, dp(5), 0, dp(12))
+        progressText = textView("Ready", 12f, muted)
+        progressText.setPadding(2, dp(5), 0, dp(11))
         content.addView(progress, LinearLayout.LayoutParams(-1, dp(5)))
         content.addView(progressText)
 
+        // Console kept compact and bounded to avoid unnecessary memory/battery use.
         val consoleCard = cardView()
-        consoleCard.addView(section("Console", "Live Geyser output"))
+        consoleCard.addView(section("Console", "Live Geyser status"))
         logs = TextView(this).apply {
             text = "Ready.\n"
-            textSize = 11.5f
-            setTextColor(Color.rgb(210, 216, 226))
+            textSize = 11f
+            setTextColor(Color.rgb(205, 211, 221))
             typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
-            setPadding(dp(10), dp(12), dp(10), dp(12))
-            background = rounded(Color.rgb(13, 16, 21), 12)
+            setPadding(dp(10), dp(11), dp(10), dp(11))
+            background = rounded(Color.rgb(13, 16, 21), 12, border)
         }
         val logScroll = ScrollView(this).apply { addView(logs, ViewGroup.LayoutParams(-1, -2)); isFillViewport = true }
-        consoleCard.addView(logScroll, LinearLayout.LayoutParams(-1, dp(300)).apply { topMargin = dp(10) })
+        consoleCard.addView(logScroll, LinearLayout.LayoutParams(-1, dp(250)).apply { topMargin = dp(10) })
         content.addView(consoleCard)
 
         start.setOnClickListener {
@@ -263,6 +303,8 @@ class MainActivity : AppCompatActivity() {
             setStatus("Starting…")
             start.isEnabled = false
             stop.isEnabled = true
+            start.alpha = 0.48f
+            stop.alpha = 1f
             val serviceIntent = Intent(this, GeyserService::class.java).apply {
                 putExtra("javaHost", ip.text?.toString()?.trim() ?: "127.0.0.1")
                 putExtra("javaPort", port.text?.toString()?.toIntOrNull() ?: 25565)
@@ -278,6 +320,8 @@ class MainActivity : AppCompatActivity() {
             progressText.text = "Ready"
             start.isEnabled = true
             stop.isEnabled = false
+            start.alpha = 1f
+            stop.alpha = 0.48f
             appendLog("Geyser stopped by user.")
         }
 
@@ -306,7 +350,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun appendLog(value: String) {
-        logs.append(value + "\n")
+        // Keep only the most recent 180 lines so long-running servers do not grow the UI endlessly.
+        val current = logs.text.toString().split('\n').takeLast(180).joinToString("\n")
+        logs.text = (current + if (current.endsWith("\n")) value else "\n$value").takeLast(14000)
         logs.post { (logs.parent as? ScrollView)?.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
