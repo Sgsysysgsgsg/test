@@ -113,7 +113,7 @@ class MainActivity : AppCompatActivity() {
         }
         return TextInputLayout(this).apply {
             this.hint = hint
-            setHintTextColor(muted)
+            setHintTextColor(android.content.res.ColorStateList.valueOf(muted))
             boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
             boxStrokeColor = Color.rgb(55, 62, 74)
             boxStrokeWidth = dp(1)
