@@ -12,8 +12,8 @@ android {
         applicationId = "com.eyad.geysermobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.3.8"
+        versionCode = 10
+        versionName = "1.3.9"
 
         externalNativeBuild {
             cmake {

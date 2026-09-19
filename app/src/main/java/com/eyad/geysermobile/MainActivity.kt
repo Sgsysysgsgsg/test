@@ -106,11 +106,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun input(title: String, value: String, number: Boolean = false): EditText = EditText(this).apply {
         setText(value)
-        setTextColor(text)
+        setTextColor(this@MainActivity.text)
         setHintTextColor(muted)
         textSize = 15f
         hint = title
-        singleLine = true
+        setSingleLine(true)
         inputType = if (number) InputType.TYPE_CLASS_NUMBER else InputType.TYPE_CLASS_TEXT
         background = rounded(field, 12, border)
         setPadding(dp(14), 0, dp(14), 0)
@@ -291,7 +291,7 @@ class MainActivity : AppCompatActivity() {
         this.id = id
         text = "$main  •  $sub"
         textSize = 14f
-        setTextColor(text)
+        setTextColor(this@MainActivity.text)
         buttonTintList = ColorStateList.valueOf(accent)
         minHeight = dp(46)
         setPadding(0, 0, 0, 0)
