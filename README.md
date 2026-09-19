@@ -30,3 +30,9 @@ Uses Android system linker (`/system/bin/linker64` or `linker`) to launch the bu
 - Uses JNI_VERSION_1_6 for Android NDK compatibility (the NDK does not expose JNI_VERSION_1_8).
 - Loads libjli.so before libjvm.so and keeps both handles alive while the JVM runs.
 - Version 1.3.3.
+
+
+## 1.3.4
+- Fixes Android linker namespace resolution for Java 21 native libraries such as libnet.so and libnio.so.
+- Preloads JRE native libraries with RTLD_GLOBAL before creating the JVM.
+- Adds java.library.path for the bundled runtime.

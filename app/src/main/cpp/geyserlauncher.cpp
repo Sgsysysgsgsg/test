@@ -9,6 +9,9 @@
 #include <cstdio>
 #include <limits.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <set>
+#include <algorithm>
 
 using JNI_CreateJavaVM_t = jint (*)(JavaVM **pvm, void **penv, void *args);
 using JNI_GetDefaultJavaVMInitArgs_t = jint (*)(void *args);
@@ -75,22 +78,72 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     // exec of files under /data/user/0/.../files, producing Permission denied.
     // Instead, create the JVM directly through JNI_CreateJavaVM. This stays inside
     // the already-running native process and never executes runtime/bin/java.
-    void* jliHandle = nullptr;
-    const std::string jliPath = jliDir + "/libjli.so";
-    if (!loadLib(jliPath, &jliHandle)) return -103;
+    // Android's linker namespace does not automatically search the extracted JRE
+    // directory for DT_NEEDED libraries.  In particular libnio.so needs libnet.so.
+    // Pre-load the JRE's native libraries with RTLD_GLOBAL so their SONAMEs are
+    // already visible when later libraries are resolved.
+    std::vector<void*> nativeHandles;
+    auto preload = [&](const std::string& path) -> bool {
+        void* h = nullptr;
+        if (loadLib(path, &h)) {
+            nativeHandles.push_back(h);
+            return true;
+        }
+        return false;
+    };
 
-    void* jvmHandle = nullptr;
+    const std::string jliPath = jliDir + "/libjli.so";
     const std::string jvmPath = serverDir + "/libjvm.so";
-    if (!loadLib(jvmPath, &jvmHandle)) {
-        dlclose(jliHandle);
-        return -104;
+
+    if (!preload(jliPath)) return -103;
+    if (!preload(jvmPath)) return -104;
+
+    // Core JDK libraries first; this resolves the common chain
+    // libjvm -> libjava -> libnet -> libnio.
+    const char* priority[] = {
+        "libjava.so", "libverify.so", "libzip.so", "libjimage.so",
+        "libnet.so", "libnio.so", "libextnet.so", "libsyslookup.so",
+        "libmanagement.so", "libmanagement_ext.so", "libinstrument.so",
+        "libjdwp.so", "libdt_socket.so", "libdt_shmem.so"
+    };
+    std::set<std::string> loadedNames = {"libjli.so", "libjvm.so"};
+    for (const char* name : priority) {
+        std::string path = libDir + "/" + name;
+        struct stat st{};
+        if (stat(path.c_str(), &st) == 0) {
+            if (preload(path)) loadedNames.insert(name);
+        }
     }
+
+    // Some JRE builds contain additional native modules. Load any remaining
+    // .so files in a few passes so dependencies become available before a
+    // dependent library is retried. Failed optional modules are harmless.
+    for (int pass = 0; pass < 4; ++pass) {
+        bool progress = false;
+        DIR* dir = opendir(libDir.c_str());
+        if (!dir) break;
+        while (dirent* ent = readdir(dir)) {
+            std::string name = ent->d_name;
+            if (name.size() < 3 || name.rfind(".so") != name.size() - 3) continue;
+            if (loadedNames.count(name)) continue;
+            std::string path = libDir + "/" + name;
+            struct stat st{};
+            if (stat(path.c_str(), &st) != 0) continue;
+            if (preload(path)) {
+                loadedNames.insert(name);
+                progress = true;
+            }
+        }
+        closedir(dir);
+        if (!progress) break;
+    }
+
+    void* jvmHandle = nativeHandles.size() > 1 ? nativeHandles[1] : nullptr;
+    if (!jvmHandle) return -104;
 
     auto createJvm = reinterpret_cast<JNI_CreateJavaVM_t>(dlsym(jvmHandle, "JNI_CreateJavaVM"));
     if (!createJvm) {
         fprintf(stderr, "ERROR: JNI_CreateJavaVM symbol was not found in libjvm.so\n");
-        dlclose(jvmHandle);
-        dlclose(jliHandle);
         return -105;
     }
 
@@ -98,17 +151,20 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     std::string javaHomeOpt = "-Djava.home=" + javaHome;
     std::string userDirOpt = "-Duser.dir=" + workDir;
     std::string tmpDir = "-Djava.io.tmpdir=" + workDir + "/tmp";
+    std::string nativeLibPath = "-Djava.library.path=" + libDir + ":" + serverDir;
     mkdir((workDir + "/tmp").c_str(), 0755);
 
-    JavaVMOption options[4];
+    JavaVMOption options[5];
     options[0].optionString = const_cast<char*>(javaHomeOpt.c_str());
     options[1].optionString = const_cast<char*>(classPath.c_str());
     options[2].optionString = const_cast<char*>(userDirOpt.c_str());
     options[3].optionString = const_cast<char*>(tmpDir.c_str());
+    options[4].optionString = const_cast<char*>(nativeLibPath.c_str());
 
     JavaVMInitArgs vmArgs{};
+
     vmArgs.version = JNI_VERSION_1_6;
-    vmArgs.nOptions = 4;
+    vmArgs.nOptions = 5;
     vmArgs.options = options;
     vmArgs.ignoreUnrecognized = JNI_TRUE;
 
@@ -118,8 +174,6 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     jint rc = createJvm(&vm, reinterpret_cast<void**>(&jni), &vmArgs);
     if (rc != JNI_OK || !vm || !jni) {
         fprintf(stderr, "ERROR: JNI_CreateJavaVM failed with code %d\n", rc);
-        dlclose(jvmHandle);
-        dlclose(jliHandle);
         return -106;
     }
 
@@ -128,12 +182,11 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     // Current Geyser Standalone bootstrap main class.
     jclass mainClass = jni->FindClass("org/geysermc/geyser/platform/standalone/GeyserStandaloneBootstrap");
     if (!mainClass) {
+        fprintf(stderr, "ERROR: FindClass failed; this may be a classpath or native-library dependency error.\n");
         jni->ExceptionDescribe();
         jni->ExceptionClear();
         fprintf(stderr, "ERROR: Could not find GeyserStandaloneBootstrap in Geyser jar.\n");
         vm->DestroyJavaVM();
-        dlclose(jvmHandle);
-        dlclose(jliHandle);
         return -107;
     }
 
@@ -143,8 +196,6 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
         jni->ExceptionClear();
         fprintf(stderr, "ERROR: GeyserStandaloneBootstrap.main(String[]) was not found.\n");
         vm->DestroyJavaVM();
-        dlclose(jvmHandle);
-        dlclose(jliHandle);
         return -108;
     }
 
@@ -180,14 +231,12 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
         jni->ExceptionDescribe();
         jni->ExceptionClear();
         vm->DestroyJavaVM();
-        dlclose(jvmHandle);
-        dlclose(jliHandle);
         return -109;
     }
 
     fprintf(stdout, "Geyser main returned; shutting down Java VM.\n");
     jint destroyRc = vm->DestroyJavaVM();
-    dlclose(jvmHandle);
-    dlclose(jliHandle);
+    // Keep JRE native libraries loaded until the VM is fully destroyed.
+    nativeHandles.clear();
     return destroyRc == JNI_OK ? 0 : destroyRc;
 }
