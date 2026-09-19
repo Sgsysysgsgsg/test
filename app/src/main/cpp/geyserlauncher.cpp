@@ -32,7 +32,7 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     if (javaHome.empty()) return -100;
 
     std::string libDir = javaHome + "/lib";
-    std::string jliDir = javaHome + "/lib/jli";
+    std::string jliDir = javaHome + "/lib";
     std::string serverDir = javaHome + "/lib/server";
     std::string ld = jliDir + ":" + serverDir + ":" + libDir;
     const char* oldLd = getenv("LD_LIBRARY_PATH");
@@ -50,25 +50,29 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
         close(fd);
     }
 
-    const std::string jvmPath = serverDir + "/libjvm.so";
-    void* jvmHandle = dlopen(jvmPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
-    if (!jvmHandle) {
-        const char* err = dlerror();
-        fprintf(stderr, "ERROR: failed to load libjvm.so: %s\n", err ? err : "unknown dlopen error");
-        return -102;
-    }
-
+    // Pojav's Android JRE 21 layout places libjli.so in <runtime>/lib,
+    // not <runtime>/lib/jli. Load JLI first, then the server JVM.
     const std::string jliPath = jliDir + "/libjli.so";
     void* handle = dlopen(jliPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
         const char* err = dlerror();
-        fprintf(stderr, "ERROR: failed to load libjli.so: %s\n", err ? err : "unknown dlopen error");
-        dlclose(jvmHandle);
+        fprintf(stderr, "ERROR: failed to load libjli.so from %s: %s\n",
+                jliPath.c_str(), err ? err : "unknown dlopen error");
+        return -102;
+    }
+
+    const std::string jvmPath = serverDir + "/libjvm.so";
+    void* jvmHandle = dlopen(jvmPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (!jvmHandle) {
+        const char* err = dlerror();
+        fprintf(stderr, "ERROR: failed to load libjvm.so from %s: %s\n",
+                jvmPath.c_str(), err ? err : "unknown dlopen error");
+        dlclose(handle);
         return -103;
     }
 
-    fprintf(stdout, "Native launcher: libjvm.so loaded\n");
-    fprintf(stdout, "Native launcher: libjli.so loaded\n");
+    fprintf(stdout, "Native launcher: libjli.so loaded from %s\n", jliPath.c_str());
+    fprintf(stdout, "Native launcher: libjvm.so loaded from %s\n", jvmPath.c_str());
 
     auto launch = reinterpret_cast<JLI_Launch_t>(dlsym(handle, "JLI_Launch"));
     if (!launch) {
