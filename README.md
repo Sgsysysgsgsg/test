@@ -47,3 +47,7 @@ Disabled Android native heap pointer tagging for the app because HotSpot/OpenJDK
 - Bedrock UDP port is hidden from the main UI and remains fixed at 19132.
 - Added compact server/authentication cards, status indicator, progress area, and scrollable live console.
 - Kept the working native Java 21/JNI runtime launcher unchanged.
+
+
+## 1.3.7
+Build fix: corrected TextInputLayout hint color type for Material Components.
