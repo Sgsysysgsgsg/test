@@ -36,3 +36,8 @@ Uses Android system linker (`/system/bin/linker64` or `linker`) to launch the bu
 - Fixes Android linker namespace resolution for Java 21 native libraries such as libnet.so and libnio.so.
 - Preloads JRE native libraries with RTLD_GLOBAL before creating the JVM.
 - Adds java.library.path for the bundled runtime.
+
+
+## 1.3.5 Pointer-tag fix
+
+Disabled Android native heap pointer tagging for the app because HotSpot/OpenJDK 21 can abort on tagged-pointer truncation when embedded on Android.
