@@ -41,3 +41,9 @@ Uses Android system linker (`/system/bin/linker64` or `linker`) to launch the bu
 ## 1.3.5 Pointer-tag fix
 
 Disabled Android native heap pointer tagging for the app because HotSpot/OpenJDK 21 can abort on tagged-pointer truncation when embedded on Android.
+
+## 1.3.6 UI update
+- Redesigned dark professional Material-style UI.
+- Bedrock UDP port is hidden from the main UI and remains fixed at 19132.
+- Added compact server/authentication cards, status indicator, progress area, and scrollable live console.
+- Kept the working native Java 21/JNI runtime launcher unchanged.
