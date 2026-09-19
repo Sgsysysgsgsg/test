@@ -25,3 +25,8 @@ Uses Android system linker (`/system/bin/linker64` or `linker`) to launch the bu
 
 1.3.0 replaces direct execution of `files/runtime/bin/java` with an Android native JLI launcher. The Java 21 runtime is still bundled as an Android-compatible ARM64 JRE archive, but Java is started through `libjli.so` from a native library extracted by Android. The Geyser service runs in a dedicated `:geyser` process so the Stop button can terminate the JVM cleanly.
 \n\n## 1.3.1\n\nFixes the Android-native Java launcher library path for the Pojav Android JRE 21 layout. `libjli.so` is loaded from `runtime/lib/libjli.so` and `libjvm.so` from `runtime/lib/server/libjvm.so`.\n
+
+## 1.3.3 build fix
+- Uses JNI_VERSION_1_6 for Android NDK compatibility (the NDK does not expose JNI_VERSION_1_8).
+- Loads libjli.so before libjvm.so and keeps both handles alive while the JVM runs.
+- Version 1.3.3.

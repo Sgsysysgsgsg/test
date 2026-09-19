@@ -75,15 +75,23 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     // exec of files under /data/user/0/.../files, producing Permission denied.
     // Instead, create the JVM directly through JNI_CreateJavaVM. This stays inside
     // the already-running native process and never executes runtime/bin/java.
+    void* jliHandle = nullptr;
+    const std::string jliPath = jliDir + "/libjli.so";
+    if (!loadLib(jliPath, &jliHandle)) return -103;
+
     void* jvmHandle = nullptr;
     const std::string jvmPath = serverDir + "/libjvm.so";
-    if (!loadLib(jvmPath, &jvmHandle)) return -103;
+    if (!loadLib(jvmPath, &jvmHandle)) {
+        dlclose(jliHandle);
+        return -104;
+    }
 
     auto createJvm = reinterpret_cast<JNI_CreateJavaVM_t>(dlsym(jvmHandle, "JNI_CreateJavaVM"));
     if (!createJvm) {
         fprintf(stderr, "ERROR: JNI_CreateJavaVM symbol was not found in libjvm.so\n");
         dlclose(jvmHandle);
-        return -104;
+        dlclose(jliHandle);
+        return -105;
     }
 
     std::string classPath = "-Djava.class.path=" + jar;
@@ -99,7 +107,7 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     options[3].optionString = const_cast<char*>(tmpDir.c_str());
 
     JavaVMInitArgs vmArgs{};
-    vmArgs.version = JNI_VERSION_1_8;
+    vmArgs.version = JNI_VERSION_1_6;
     vmArgs.nOptions = 4;
     vmArgs.options = options;
     vmArgs.ignoreUnrecognized = JNI_TRUE;
@@ -111,7 +119,8 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     if (rc != JNI_OK || !vm || !jni) {
         fprintf(stderr, "ERROR: JNI_CreateJavaVM failed with code %d\n", rc);
         dlclose(jvmHandle);
-        return -105;
+        dlclose(jliHandle);
+        return -106;
     }
 
     fprintf(stdout, "Native launcher: Java VM created successfully.\n");
@@ -124,7 +133,8 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
         fprintf(stderr, "ERROR: Could not find GeyserStandaloneBootstrap in Geyser jar.\n");
         vm->DestroyJavaVM();
         dlclose(jvmHandle);
-        return -106;
+        dlclose(jliHandle);
+        return -107;
     }
 
     jmethodID mainMethod = jni->GetStaticMethodID(mainClass, "main", "([Ljava/lang/String;)V");
@@ -134,7 +144,8 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
         fprintf(stderr, "ERROR: GeyserStandaloneBootstrap.main(String[]) was not found.\n");
         vm->DestroyJavaVM();
         dlclose(jvmHandle);
-        return -107;
+        dlclose(jliHandle);
+        return -108;
     }
 
     jclass stringClass = jni->FindClass("java/lang/String");
@@ -170,11 +181,13 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
         jni->ExceptionClear();
         vm->DestroyJavaVM();
         dlclose(jvmHandle);
-        return -108;
+        dlclose(jliHandle);
+        return -109;
     }
 
     fprintf(stdout, "Geyser main returned; shutting down Java VM.\n");
     jint destroyRc = vm->DestroyJavaVM();
     dlclose(jvmHandle);
+    dlclose(jliHandle);
     return destroyRc == JNI_OK ? 0 : destroyRc;
 }
