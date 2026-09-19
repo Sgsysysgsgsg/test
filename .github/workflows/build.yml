@@ -1,0 +1,88 @@
+name: Build Geyser Mobile
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # Geyser requires Java 21+. We use the Android-compatible JRE 21
+      # produced for PojavLauncher rather than a desktop JDK.
+      - name: Download Android Java 21 runtime
+        uses: dawidd6/action-download-artifact@v9
+        with:
+          workflow: build.yml
+          repo: TeamPojavLauncher/pojav-android-openjdk-build-multiarch
+          branch: buildjre17-21
+          name: jre21-aarch64
+          workflow_conclusion: success
+          path: .jre21
+
+      - name: Bundle Java 21 archive (ARM64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets
+
+          echo "Downloaded Java 21 artifact:"
+          find .jre21 -type f -print | sort
+
+          ARCHIVE="$(find .jre21 -type f \( -name '*.tar.xz' -o -name '*.tar.gz' -o -name '*.tar' -o -name '*.zip' \) | head -n 1)"
+          if [ -z "$ARCHIVE" ]; then
+            echo "ERROR: No Java 21 archive found"
+            exit 1
+          fi
+
+          case "$ARCHIVE" in
+            *.tar.xz) cp "$ARCHIVE" app/src/main/assets/jre21-aarch64.tar.xz ;;
+            *.tar.gz) cp "$ARCHIVE" app/src/main/assets/jre21-aarch64.tar.gz ;;
+            *.tar) cp "$ARCHIVE" app/src/main/assets/jre21-aarch64.tar ;;
+            *.zip) cp "$ARCHIVE" app/src/main/assets/jre21-aarch64.zip ;;
+            *) echo "ERROR: Unsupported archive format"; exit 1 ;;
+          esac
+
+          echo "Bundled Java 21 archive:"
+          ls -lh app/src/main/assets/jre21-aarch64.*
+
+      - name: Build Debug APK
+        env:
+          GRADLE_OPTS: "-Xmx4g -Dorg.gradle.workers.max=2"
+        run: gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeyserMobile-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
