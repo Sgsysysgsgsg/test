@@ -5,6 +5,10 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.SystemClock
 import android.system.Os
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import android.content.pm.ServiceInfo
+import java.net.DatagramSocket
 import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
@@ -27,6 +31,12 @@ class GeyserService : Service() {
     }
 
     companion object {
+        private const val PREFS = "geyser_state"
+        private const val PREF_RUNNING = "running"
+        private const val PREF_HOST = "host"
+        private const val PREF_PORT = "port"
+        private const val PREF_BEDROCK = "bedrock"
+        private const val PREF_AUTH = "auth"
         const val ACTION_UPDATE = "com.eyad.geysermobile.UPDATE"
         const val EXTRA_STATUS = "status"
         const val EXTRA_LOG = "log"
@@ -40,35 +50,57 @@ class GeyserService : Service() {
         "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/standalone"
     private var worker: Thread? = null
     @Volatile private var nativeExitCode: Int = -999
+    @Volatile private var stopRequested = false
 
     override fun onCreate() {
         super.onCreate()
         val channel = NotificationChannel("geyser", "Geyser Mobile", NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        startForeground(
-            7,
-            Notification.Builder(this, "geyser")
-                .setContentTitle("Geyser Mobile")
-                .setContentText("Preparing Geyser…")
-                .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setOngoing(true)
-                .build()
-        )
+        val notification = NotificationCompat.Builder(this, "geyser")
+            .setContentTitle("Geyser Mobile")
+            .setContentText("Preparing Geyser…")
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            ServiceCompat.startForeground(
+                this,
+                7,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(7, notification)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, id: Int): Int {
+        stopRequested = false
         if (worker?.isAlive == true) {
             emit(status = "Already running", log = "A Geyser startup is already in progress.")
             return START_STICKY
         }
 
-        val auth = intent?.getStringExtra("authType") ?: "online"
-        val host = intent?.getStringExtra("javaHost") ?: "127.0.0.1"
-        val javaPort = intent?.getIntExtra("javaPort", 25565) ?: 25565
-        val bedrockPort = intent?.getIntExtra("bedrockPort", 19132) ?: 19132
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val auth = intent?.getStringExtra("authType") ?: prefs.getString(PREF_AUTH, "online") ?: "online"
+        val host = intent?.getStringExtra("javaHost") ?: prefs.getString(PREF_HOST, "127.0.0.1") ?: "127.0.0.1"
+        val javaPort = intent?.getIntExtra("javaPort", prefs.getInt(PREF_PORT, 25565)) ?: prefs.getInt(PREF_PORT, 25565)
+        val bedrockPort = intent?.getIntExtra("bedrockPort", prefs.getInt(PREF_BEDROCK, 19132)) ?: prefs.getInt(PREF_BEDROCK, 19132)
+
+        prefs.edit()
+            .putString(PREF_AUTH, auth)
+            .putString(PREF_HOST, host)
+            .putInt(PREF_PORT, javaPort)
+            .putInt(PREF_BEDROCK, bedrockPort)
+            .apply()
 
         worker = Thread {
             try {
+                var restartCount = 0
+                while (!stopRequested) {
                 emit(status = "Preparing", log = "Starting Geyser Mobile…")
                 val dir = File(filesDir, "geyser").apply { mkdirs() }
                 val jar = File(dir, "Geyser-Standalone.jar")
@@ -84,6 +116,10 @@ class GeyserService : Service() {
                 val key = File(filesDir, "floodgate-key.pem")
                 if (auth == "floodgate" && !key.exists()) {
                     throw IOException("Floodgate mode selected, but no .pem key is installed.")
+                }
+
+                if (!canBindUdpPort(bedrockPort)) {
+                    throw IOException("Bedrock UDP port $bedrockPort is already in use. Stop the previous Geyser instance and try again.")
                 }
 
                 val config = File(dir, "config.yml")
@@ -134,6 +170,7 @@ class GeyserService : Service() {
                                     }
                                     if (!announcedRunning && (clean.contains("Geyser", true) || clean.contains("started", true))) {
                                         announcedRunning = true
+                                        setServiceRunning(true)
                                         emit(status = "Running", log = "Geyser process is starting…", running = true)
                                     }
                                 }
@@ -159,17 +196,51 @@ class GeyserService : Service() {
                 }
 
                 val exit = nativeExitCode
-                if (exit == 0) emit(status = "Stopped", log = "Geyser stopped.", running = false)
-                else throw IOException("Java/Geyser exited with code $exit. See console for details.")
+                if (exit == 0) {
+                    setServiceRunning(false)
+                    emit(status = "Stopped", log = "Geyser stopped.", running = false)
+                    break
+                }
+
+                val lastLog = consoleFile.takeIf { it.exists() }?.readText()?.takeLast(6000) ?: ""
+                val bindFailure = lastLog.contains("Address already in use", ignoreCase = true)
+                if (bindFailure) {
+                    setServiceRunning(false)
+                    emit(status = "Error", log = "ERROR: UDP port $bedrockPort is already in use. Geyser was not restarted.", error = "UDP port in use", running = false)
+                    break
+                }
+
+                if (stopRequested || restartCount >= 3) {
+                    setServiceRunning(false)
+                    emit(status = "Error", log = "ERROR: Java/Geyser exited with code $exit after ${restartCount} automatic restart(s).", error = "Geyser exited with code $exit", running = false)
+                    break
+                }
+
+                restartCount++
+                val delayMs = 1500L * restartCount
+                emit(status = "Recovering", log = "Geyser stopped unexpectedly (code $exit). Restarting in ${delayMs / 1000.0}s…", running = false)
+                SystemClock.sleep(delayMs)
+            }
             } catch (t: Throwable) {
                 android.util.Log.e("GeyserMobile", "Geyser failed", t)
-                emit(status = "Error", log = "ERROR: ${t.message ?: t.javaClass.simpleName}", error = t.message ?: "Unknown error", running = false)
-                stopSelf()
+                if (!stopRequested) {
+                    setServiceRunning(false)
+                    emit(status = "Error", log = "ERROR: ${t.message ?: t.javaClass.simpleName}", error = t.message ?: "Unknown error", running = false)
+                }
+            } finally {
+                if (!stopRequested) stopSelf()
             }
         }.also { it.start() }
 
-        return START_NOT_STICKY
+        return START_STICKY
     }
+
+    private fun setServiceRunning(running: Boolean) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_RUNNING, running).apply()
+    }
+
+    private fun isServiceRunning(): Boolean =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_RUNNING, false)
 
     private fun ensureBundledRuntime(): File {
         val runtime = File(filesDir, "runtime")
@@ -293,6 +364,14 @@ class GeyserService : Service() {
         return child
     }
 
+    private fun canBindUdpPort(port: Int): Boolean {
+        return try {
+            DatagramSocket(port).use { true }
+        } catch (_: IOException) {
+            false
+        }
+    }
+
     private fun download(url: String, out: File) {
         val temp = File(out.parentFile, out.name + ".part")
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -370,11 +449,20 @@ class GeyserService : Service() {
         return "%.2f GB".format(mb / 1024.0)
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Keep the foreground server alive when the launcher activity is swiped away.
+        // The service is intentionally independent from the UI process.
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        stopRequested = true
+        setServiceRunning(false)
         worker?.interrupt()
         super.onDestroy()
         // Geyser/Java is hosted by this dedicated :geyser Android process.
-        // Stopping the service therefore terminates the whole JVM with it.
+        // Kill only this service process so the embedded JVM and UDP 19132 socket
+        // are released immediately; the main UI process is unaffected.
         android.os.Process.killProcess(android.os.Process.myPid())
     }
 

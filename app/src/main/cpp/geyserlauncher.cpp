@@ -154,17 +154,27 @@ Java_com_eyad_geysermobile_GeyserService_nativeLaunchJava(
     std::string nativeLibPath = "-Djava.library.path=" + libDir + ":" + serverDir;
     mkdir((workDir + "/tmp").c_str(), 0755);
 
-    JavaVMOption options[5];
+    // Keep the embedded JVM conservative on Android. Geyser is a bridge, not
+    // the Minecraft world server itself, so an unbounded desktop-style heap can
+    // waste RAM and make OEM Android builds reclaim the service under pressure.
+    const std::string heapMin = "-Xms64m";
+    const std::string heapMax = "-Xmx512m";
+    const std::string activeCpu = "-XX:ActiveProcessorCount=4";
+
+    JavaVMOption options[8];
     options[0].optionString = const_cast<char*>(javaHomeOpt.c_str());
     options[1].optionString = const_cast<char*>(classPath.c_str());
     options[2].optionString = const_cast<char*>(userDirOpt.c_str());
     options[3].optionString = const_cast<char*>(tmpDir.c_str());
     options[4].optionString = const_cast<char*>(nativeLibPath.c_str());
+    options[5].optionString = const_cast<char*>(heapMin.c_str());
+    options[6].optionString = const_cast<char*>(heapMax.c_str());
+    options[7].optionString = const_cast<char*>(activeCpu.c_str());
 
     JavaVMInitArgs vmArgs{};
 
     vmArgs.version = JNI_VERSION_1_6;
-    vmArgs.nOptions = 5;
+    vmArgs.nOptions = 8;
     vmArgs.options = options;
     vmArgs.ignoreUnrecognized = JNI_TRUE;
 

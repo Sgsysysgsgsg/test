@@ -290,6 +290,13 @@ class MainActivity : AppCompatActivity() {
         content.addView(consoleCard)
 
         start.setOnClickListener {
+            if (getSharedPreferences("geyser_state", MODE_PRIVATE).getBoolean("running", false)) {
+                setStatus("Running")
+                appendLog("Geyser is already running. No second instance was started.")
+                start.isEnabled = false
+                stop.isEnabled = true
+                return@setOnClickListener
+            }
             val mode = when (authGroup.checkedRadioButtonId) { 2 -> "offline"; 3 -> "floodgate"; else -> "online" }
             if (mode == "floodgate" && !java.io.File(filesDir, "floodgate-key.pem").exists()) {
                 setStatus("Error")
@@ -329,6 +336,18 @@ class MainActivity : AppCompatActivity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         ContextCompat.registerReceiver(this, receiver, IntentFilter(GeyserService.ACTION_UPDATE), ContextCompat.RECEIVER_NOT_EXPORTED)
+
+        // Restore the server state when the UI is reopened while the foreground
+        // service is still hosting Geyser in its dedicated process.
+        if (getSharedPreferences("geyser_state", MODE_PRIVATE).getBoolean("running", false)) {
+            setStatus("Running")
+            start.isEnabled = false
+            stop.isEnabled = true
+            start.alpha = 0.48f
+            stop.alpha = 1f
+            progress.visibility = View.GONE
+            progressText.text = "Geyser is running in the background"
+        }
     }
 
     private fun radio(main: String, sub: String, id: Int): RadioButton = RadioButton(this).apply {
